@@ -30,6 +30,8 @@ volatile Array *temp_scratchpad;
 
 // memory!
 volatile int *branch_variable;
+
+volatile int size[0x10000];
 volatile int *array_size;
 
 /* some function definitions */
@@ -46,8 +48,8 @@ alloc_memory() {
     scratchpad = mmap_size(sizeof(Array) * 256);
     temp_scratchpad = mmap_size(sizeof(Array) * 256);
     branch_variable = mmap_size(0x1000);
-    array_size = mmap_size(sizeof(int));
-    *array_size = 0x1000;
+    size[0] = 0x1000;
+    array_size = &size[0];
 }
 
 
