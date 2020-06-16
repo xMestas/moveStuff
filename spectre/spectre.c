@@ -56,11 +56,6 @@ alloc_memory() {
 int meltdown_logic(int *idx,
                     Array *cachepad) {
     volatile int i = 0;
-
-    for (int j = 0; j < 100; j++) {
-	volatile char k = secret[j];
-    }
-
     
     // flush array size from cache and load index to access into cache
     *idx;
